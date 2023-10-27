@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/edaniels/golog"
 	_ "github.com/shawnbmccarthy/log-parse-module/sensors"
+	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/config"
 	robotimpl "go.viam.com/rdk/robot/impl"
 	"go.viam.com/rdk/robot/web"
@@ -35,6 +36,20 @@ func realMain() error {
 	if err != nil {
 		return err
 	}
+
+	/*
+	 * validate that sensor is up
+	 */
+	for _, n := range myRobot.ResourceNames() {
+		logger.Info(n)
+	}
+
+	lpSensor, err := sensor.FromRobot(myRobot, "logparser")
+	reading, err := lpSensor.Readings(context.Background(), map[string]interface{}{})
+	if err != nil {
+		return err
+	}
+	logger.Info(reading)
 
 	return web.RunWebWithConfig(ctx, myRobot, conf, logger)
 }
