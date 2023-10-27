@@ -16,7 +16,7 @@ var LogParserModel = resource.NewModel("viam-soleng", "android", "logparser")
 type LogParser struct {
 	resource.Named
 	mu              sync.Mutex
-	logFiles        []string
+	logFileDirs     []string
 	outputDirectory string
 	logger          golog.Logger
 }
@@ -57,10 +57,10 @@ func (lp *LogParser) Reconfigure(
 	lp.mu.Lock()
 	defer lp.mu.Unlock()
 
-	lp.logFiles = conf.Attributes.StringSlice("log_files")
+	lp.logFileDirs = conf.Attributes.StringSlice("log_file_dirs")
 	lp.outputDirectory = conf.Attributes.String("output_directory")
 
-	if len(lp.logFiles) == 0 {
+	if len(lp.logFileDirs) == 0 {
 		return errors.New("array of logfiles must be provided")
 	}
 
@@ -90,4 +90,21 @@ func (lp *LogParser) Readings(
 
 func (lp *LogParser) Close(_ context.Context) error {
 	return nil
+}
+
+func (lp *LogParser) DoCommand(_ context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+	from := strings.TrimSpace(cmd["from"].(string))
+	to := strings.TrimSpace(cmd["to"].(string))
+
+	if len(from) <= 0 {
+		return nil, errors.New("from value must be provided")
+	}
+
+	if len(to) <= 0 {
+		return nil, errors.New("to value must be provided")
+	}
+
+	// run search
+
+	return nil, nil
 }

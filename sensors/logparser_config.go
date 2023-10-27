@@ -3,7 +3,7 @@ package sensors
 import "fmt"
 
 type LogParserConfig struct {
-	LogFiles        []string `json:"log_files"`
+	LogFiles        []string `json:"log_file_dirs"`
 	OutputDirectory string   `json:"output_directory"`
 }
 

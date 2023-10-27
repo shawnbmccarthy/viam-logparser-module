@@ -1,0 +1,16 @@
+{
+  "components": [
+    {
+      "type": "sensor",
+      "model": "viam-soleng:android:logparser",
+      "name": "logparser",
+      "attributes": {
+        "log_file_dirs": [
+          "/tmp"
+        ],
+        "output_directory": "/tmp",
+        "depends_on": []
+      }
+    }
+  ]
+}
