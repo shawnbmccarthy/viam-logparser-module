@@ -2,16 +2,27 @@ package sensors
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/edaniels/golog"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/resource"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var LogParserModel = resource.NewModel("viam-soleng", "android", "logparser")
+
+type LastMessage struct {
+	lastRun    time.Time
+	services   []string
+	logs       []string
+	searchFrom time.Time
+	searchTo   time.Time
+}
 
 type LogParser struct {
 	resource.Named
@@ -19,6 +30,7 @@ type LogParser struct {
 	logFileDirs     []string
 	outputDirectory string
 	logger          golog.Logger
+	lastMessage     LastMessage
 }
 
 func init() {
@@ -59,6 +71,7 @@ func (lp *LogParser) Reconfigure(
 
 	lp.logFileDirs = conf.Attributes.StringSlice("log_file_dirs")
 	lp.outputDirectory = conf.Attributes.String("output_directory")
+	lp.lastMessage = LastMessage{}
 
 	if len(lp.logFileDirs) == 0 {
 		return errors.New("array of logfiles must be provided")
@@ -85,7 +98,10 @@ func (lp *LogParser) Readings(
 	_ context.Context,
 	_ map[string]interface{},
 ) (map[string]interface{}, error) {
-	return map[string]interface{}{"dummy_val": 0.0}, nil
+	if lp.lastMessage.lastRun.IsZero() {
+		return map[string]interface{}{"msg": "no searches have been run"}, nil
+	}
+	return toMap(lp)
 }
 
 func (lp *LogParser) Close(_ context.Context) error {
@@ -93,18 +109,45 @@ func (lp *LogParser) Close(_ context.Context) error {
 }
 
 func (lp *LogParser) DoCommand(_ context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	from := strings.TrimSpace(cmd["from"].(string))
-	to := strings.TrimSpace(cmd["to"].(string))
-
-	if len(from) <= 0 {
-		return nil, errors.New("from value must be provided")
+	from, err := time.Parse("2006-01-02 13:01", strings.TrimSpace(cmd["from"].(string)))
+	if err != nil {
+		return nil,  fmt.Errorf("error parsing from time (format required: YYYY-MM-DD HH:MM) -> %w", err)
 	}
 
-	if len(to) <= 0 {
-		return nil, errors.New("to value must be provided")
+	to, err := time.Parse("2006-01-02 13:01", strings.TrimSpace(cmd["to"].(string)))
+	if err != nil {
+		return nil, fmt.Errorf("error parsing to time (format required: YYY-MM-DD HH:MM) -> %w", err)
 	}
 
-	// run search
 
-	return nil, nil
+	services := strings.Split(strings.TrimSpace(cmd["services"].(string)), ",")
+	if len(services) == 0 {
+		services = append(services, "*")
+	}
+
+	return doSearch(lp.logFileDirs, from, to, services)
+}
+
+func toMap(lp *LogParser) (map[string]interface{}, error) {
+	var tmpMap map[string]interface{}
+	d, err := json.Marshal(lp)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(d, tmpMap)
+	if err != nil {
+		return nil, err
+	}
+	return tmpMap, nil
+
+}
+func doSearch(logDirs []string, from time.Time, to time.Time, services []string) (map[string]interface{}, error) {
+	logsMoved := []string
+
+	for _, dir := range logDirs {
+		for _, service := range services {
+
+		}
+	}
 }
