@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/edaniels/golog"
 	"go.viam.com/rdk/components/sensor"
+	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"io"
 	"os"
@@ -46,7 +46,7 @@ type LogParser struct {
 	mu              sync.Mutex
 	logFileDirs     []string // directories to search
 	outputDirectory string   // where to copy files to
-	logger          golog.Logger
+	logger          logging.Logger
 	lastMessage     LastMessage // last message (used by readings)
 	timeZone        string      // system timezone
 	offset          int         // system offset
@@ -66,7 +66,7 @@ func NewLogParser(
 	ctx context.Context,
 	deps resource.Dependencies,
 	conf resource.Config,
-	logger golog.Logger,
+	logger logging.Logger,
 ) (sensor.Sensor, error) {
 	lp := &LogParser{
 		Named:  conf.ResourceName().AsNamed(),
@@ -140,15 +140,19 @@ func (lp *LogParser) DoCommand(_ context.Context, cmd map[string]interface{}) (m
 
 	to, err := buildRFC3339TimeString(strings.TrimSpace(cmd["to"].(string)), lp.offset)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing to time (format required: YYY-MM-DDTHH:MM) -> %w", err)
+		return nil, fmt.Errorf("error parsing to time (format required: YYYY-MM-DDTHH:MM) -> %w", err)
 	}
 
-	services := strings.Split(strings.TrimSpace(cmd["services"].(string)), ",")
-	if len(services) == 0 {
+	var services []string
+	val, ok := cmd["services"]
+	if ok {
+		services = strings.Split(strings.TrimSpace(val.(string)), ",")
+	} else {
 		services = append(services, "*")
 	}
+	lp.logger.Infof("Services: %v", services)
 
-	files, err := doSearch(lp.logFileDirs, from, to, services)
+	files, err := doSearch(lp.logFileDirs, from, to, services, lp.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -203,8 +207,9 @@ func absolute(x int) int {
 	return x
 }
 
-func doSearch(logDirs []string, from, to time.Time, services []string) ([]string, error) {
+func doSearch(logDirs []string, from, to time.Time, services []string, logger logging.Logger) ([]string, error) {
 	var files []string
+	logger.Infof("searching -> from: %s, to: %s", from.Format(time.RFC3339), to.Format(time.RFC3339))
 
 	// for each search directory
 	for _, dir := range logDirs {
@@ -213,25 +218,30 @@ func doSearch(logDirs []string, from, to time.Time, services []string) ([]string
 		if err != nil {
 			return nil, err
 		}
-
 		if err := filepath.Walk(dir, func(pathItem string, pathInfo os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-
 			// is this a file between given times and starts with a service name
-			if !pathInfo.IsDir() && pathInfo.ModTime().After(from) && pathInfo.ModTime().Before(to) {
+			logger.Infof(
+				"pathInfo(%s) -> modtime: %s, from: %s, to: %s",
+				pathInfo.Name(),
+				pathInfo.ModTime().Local().Format(time.RFC3339),
+				from.Local().Format(time.RFC3339),
+				to.Local().Format(time.RFC3339),
+			)
+			if !pathInfo.IsDir() && (pathInfo.ModTime().Local().After(from.Local()) && pathInfo.ModTime().Local().Before(to.UTC())) {
+				fileToAppend := filepath.Join(path, filepath.Base(pathItem))
 				// is the file in the data range part of a service we want to collect?
 				for _, service := range services {
 					if service == "*" {
-						files = append(files, filepath.Join(path, pathItem))
+						files = append(files, fileToAppend)
 					} else {
 						if strings.HasPrefix(pathItem, service) {
-							files = append(files, filepath.Join(path, pathItem))
+							files = append(files, fileToAppend)
 						}
 					}
 				}
-				files = append(files, path)
 			}
 			return nil
 		}); err != nil {
@@ -241,8 +251,10 @@ func doSearch(logDirs []string, from, to time.Time, services []string) ([]string
 	return files, nil
 }
 
-func doCopy(files []string, uploadDirectory string, logger golog.Logger) error {
+func doCopy(files []string, uploadDirectory string, logger logging.Logger) error {
+	logger.Infof("Files: %v", files)
 	for _, file := range files {
+		logger.Debugf("attempting copy of %s", file)
 		dir, fn := filepath.Split(file)
 		uploadTo := filepath.Join(uploadDirectory, dir)
 		if err := os.MkdirAll(uploadTo, 0775); err != nil {
@@ -255,11 +267,13 @@ func doCopy(files []string, uploadDirectory string, logger golog.Logger) error {
 
 		dest, err := os.Create(filepath.Join(uploadTo, fn))
 		if err != nil {
+			logger.Errorf("doCopy failed to create: %s", filepath.Join(uploadTo, fn))
 			return err
 		}
 
 		bytes, err := io.Copy(dest, source)
 		if err != nil {
+			logger.Errorf("failed to copy: from->%v to->%v", dest, source)
 			return err
 		}
 

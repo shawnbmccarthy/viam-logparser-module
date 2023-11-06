@@ -6,9 +6,9 @@
       "name": "logparser",
       "attributes": {
         "log_file_dirs": [
-          "/tmp"
+          "./tests/logs"
         ],
-        "output_directory": "/tmp",
+        "output_directory": "./tests/upload",
         "depends_on": []
       }
     }

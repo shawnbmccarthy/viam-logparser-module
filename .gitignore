@@ -1,2 +1,5 @@
 viam-logparser-module
 .idea
+
+tests/logs
+tests/upload

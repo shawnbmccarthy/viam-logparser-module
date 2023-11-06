@@ -6,3 +6,18 @@ test:
 
 lint:
 	gofmt -w -s .
+
+rm-test-log-dirs:
+	@echo "remove existing log testing directories"
+	@rm -rf ./tests/logs
+	@rm -rf ./tests/upload
+
+mk-log-dirs: rm-test-log-dirs
+	@mkdir -p ./tests/logs
+	@mkdir -p ./tests/upload
+
+remote-test: mk-log-dirs
+	@echo "remote-test"
+	./tests/build_logs.sh
+
+clean: rm-test-log-dirs
