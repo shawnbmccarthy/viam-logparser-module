@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"github.com/edaniels/golog"
 	"github.com/shawnbmccarthy/log-parse-module/sensors"
 	"go.viam.com/rdk/components/sensor"
+	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/module"
 )
 
@@ -17,7 +17,7 @@ func main() {
 
 func realMain() error {
 	ctx := context.Background()
-	logger := golog.NewDevelopmentLogger("log-module")
+	logger := logging.NewDebugLogger("log-module")
 	myMod, err := module.NewModuleFromArgs(ctx, logger)
 	if err != nil {
 		return err
