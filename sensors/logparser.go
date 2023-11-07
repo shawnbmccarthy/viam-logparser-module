@@ -2,9 +2,7 @@ package sensors
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
@@ -27,29 +25,15 @@ type LastMessage struct {
 	searchTo   time.Time // time of search (to)
 }
 
-func ToMap(lp *LogParser) (map[string]interface{}, error) {
-	var tmpMap map[string]interface{}
-	d, err := json.Marshal(lp)
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal(d, &tmpMap)
-	if err != nil {
-		return nil, err
-	}
-	return tmpMap, nil
-}
-
 type LogParser struct {
 	resource.Named
 	mu              sync.Mutex
 	logFileDirs     []string // directories to search
 	outputDirectory string   // where to copy files to
 	logger          logging.Logger
-	lastMessage     LastMessage // last message (used by readings)
-	timeZone        string      // system timezone
-	offset          int         // system offset
+	lastMessage     *LastMessage // last message (used by readings)
+	timeZone        string       // system timezone
+	offset          int          // system offset
 }
 
 func init() {
@@ -90,7 +74,7 @@ func (lp *LogParser) Reconfigure(
 
 	lp.logFileDirs = conf.Attributes.StringSlice("log_file_dirs")
 	lp.outputDirectory = conf.Attributes.String("output_directory")
-	lp.lastMessage = LastMessage{}
+	lp.lastMessage = &LastMessage{}
 
 	if len(lp.logFileDirs) == 0 {
 		return errors.New("array of logfiles must be provided")
@@ -113,14 +97,18 @@ func (lp *LogParser) Reconfigure(
 	return nil
 }
 
-func (lp *LogParser) Readings(
-	_ context.Context,
-	_ map[string]interface{},
-) (map[string]interface{}, error) {
+func (lp *LogParser) Readings(_ context.Context, _ map[string]interface{}) (map[string]interface{}, error) {
 	if lp.lastMessage.lastRun.IsZero() {
 		return map[string]interface{}{"msg": "no searches have been run"}, nil
 	}
-	return ToMap(lp)
+
+	return map[string]interface{}{
+		"lastRun":  lp.lastMessage.lastRun.Local().Format(time.RFC3339),
+		"from":     lp.lastMessage.searchFrom.Local().Format(time.RFC3339),
+		"to":       lp.lastMessage.searchTo.Local().Format(time.RFC3339),
+		"logs":     lp.lastMessage.logs,
+		"services": lp.lastMessage.services,
+	}, nil
 }
 
 func (lp *LogParser) Close(_ context.Context) error {
@@ -135,12 +123,14 @@ func (lp *LogParser) DoCommand(_ context.Context, cmd map[string]interface{}) (m
 	// build time
 	from, err := buildRFC3339TimeString(strings.TrimSpace(cmd["from"].(string)), lp.offset)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing from time (format required: YYYY-MM-DDTHH:MM) -> %w", err)
+		lp.logger.Errorf("error parsing from time, format required: YYYY-MM-DDTHH:MM, %v", err)
+		return nil, err
 	}
 
 	to, err := buildRFC3339TimeString(strings.TrimSpace(cmd["to"].(string)), lp.offset)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing to time (format required: YYYY-MM-DDTHH:MM) -> %w", err)
+		lp.logger.Errorf("error parsing to time, format required: YYYY-MM-DDTHH:MM, %v", err)
+		return nil, err
 	}
 
 	var services []string
@@ -150,7 +140,6 @@ func (lp *LogParser) DoCommand(_ context.Context, cmd map[string]interface{}) (m
 	} else {
 		services = append(services, "*")
 	}
-	lp.logger.Infof("Services: %v", services)
 
 	files, err := doSearch(lp.logFileDirs, from, to, services, lp.logger)
 	if err != nil {
@@ -162,11 +151,13 @@ func (lp *LogParser) DoCommand(_ context.Context, cmd map[string]interface{}) (m
 		return nil, err
 	}
 
-	lp.lastMessage.lastRun = start
-	lp.lastMessage.services = services
-	lp.lastMessage.logs = files
-	lp.lastMessage.searchFrom = from
-	lp.lastMessage.searchTo = to
+	lp.lastMessage = &LastMessage{
+		lastRun:    start,
+		services:   services,
+		logs:       files,
+		searchFrom: from,
+		searchTo:   to,
+	}
 
 	return map[string]interface{}{
 		"filesCopied": files,
@@ -209,7 +200,7 @@ func absolute(x int) int {
 
 func doSearch(logDirs []string, from, to time.Time, services []string, logger logging.Logger) ([]string, error) {
 	var files []string
-	logger.Infof("searching -> from: %s, to: %s", from.Format(time.RFC3339), to.Format(time.RFC3339))
+	logger.Debugf("searching -> from: %s, to: %s", from.Format(time.RFC3339), to.Format(time.RFC3339))
 
 	// for each search directory
 	for _, dir := range logDirs {
@@ -220,17 +211,11 @@ func doSearch(logDirs []string, from, to time.Time, services []string, logger lo
 		}
 		if err := filepath.Walk(dir, func(pathItem string, pathInfo os.FileInfo, err error) error {
 			if err != nil {
+				logger.Errorf("error processing directory: %v", err)
 				return err
 			}
 			// is this a file between given times and starts with a service name
-			logger.Infof(
-				"pathInfo(%s) -> modtime: %s, from: %s, to: %s",
-				pathInfo.Name(),
-				pathInfo.ModTime().Local().Format(time.RFC3339),
-				from.Local().Format(time.RFC3339),
-				to.Local().Format(time.RFC3339),
-			)
-			if !pathInfo.IsDir() && (pathInfo.ModTime().Local().After(from.Local()) && pathInfo.ModTime().Local().Before(to.UTC())) {
+			if !pathInfo.IsDir() && pathInfo.ModTime().Local().After(from.Local()) && pathInfo.ModTime().Local().Before(to.Local()) {
 				fileToAppend := filepath.Join(path, filepath.Base(pathItem))
 				// is the file in the data range part of a service we want to collect?
 				for _, service := range services {
@@ -245,6 +230,7 @@ func doSearch(logDirs []string, from, to time.Time, services []string, logger lo
 			}
 			return nil
 		}); err != nil {
+			logger.Errorf("error walking directory: %v", err)
 			return nil, err
 		}
 	}
@@ -252,9 +238,8 @@ func doSearch(logDirs []string, from, to time.Time, services []string, logger lo
 }
 
 func doCopy(files []string, uploadDirectory string, logger logging.Logger) error {
-	logger.Infof("Files: %v", files)
 	for _, file := range files {
-		logger.Debugf("attempting copy of %s", file)
+		logger.Debugf("attempting copy of file: %s", file)
 		dir, fn := filepath.Split(file)
 		uploadTo := filepath.Join(uploadDirectory, dir)
 		if err := os.MkdirAll(uploadTo, 0775); err != nil {
@@ -262,12 +247,13 @@ func doCopy(files []string, uploadDirectory string, logger logging.Logger) error
 		}
 		source, err := os.Open(file)
 		if err != nil {
+			logger.Errorf("error opening file(%s), %v", file, err)
 			return err
 		}
 
 		dest, err := os.Create(filepath.Join(uploadTo, fn))
 		if err != nil {
-			logger.Errorf("doCopy failed to create: %s", filepath.Join(uploadTo, fn))
+			logger.Errorf("failed to create: %s", filepath.Join(uploadTo, fn))
 			return err
 		}
 

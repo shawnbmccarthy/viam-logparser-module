@@ -60,6 +60,11 @@ func realMain() error {
 	}
 
 	logger.Infof("Success: %v", data)
+	reading, err = lpSensor.Readings(context.Background(), map[string]interface{}{})
+	if err != nil {
+		return err
+	}
+	logger.Infof("reading: %v", reading)
 
 	return web.RunWebWithConfig(ctx, myRobot, conf, logger)
 }
