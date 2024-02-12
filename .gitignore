@@ -3,3 +3,5 @@ viam-logparser-module
 
 tests/logs
 tests/upload
+
+bin
