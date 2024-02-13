@@ -4,7 +4,7 @@ logparser: cmd/module/cmd.go
 
 client: cmd/client/cmd.go
 	@mkdir -p ./bin
-	GOARCH=arm64 go build -o ./bin/lpclient cmd/module/cmd.go
+	GOARCH=arm64 go build -o ./bin/lpclient cmd/client/cmd.go
 
 test:
 	go test

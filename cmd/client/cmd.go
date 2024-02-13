@@ -7,7 +7,7 @@ import (
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/robot/client"
-	"go.viam.com/rdk/utils"
+	//"go.viam.com/rdk/utils"
 	"go.viam.com/utils/rpc"
 	"os"
 )
@@ -23,10 +23,16 @@ func main() {
 	servicesFlag := flag.String("services", "", "services to search")
 	logParserFlag := flag.String("logparser", "logparser", "name of component to use")
 	robotAddr := flag.String("robot", "", "robot address to connect to")
-	robotSecret := flag.String("secret", "", "robot secret to use")
+	robotApiKey := flag.String("key", "", "robot api key to use")
+	robotApiId := flag.String("id", "", "robot api key id to use")
 	flag.Parse()
 
-	if *fromFlag == "" || *toFlag == "" || *robotAddr == "" || *robotSecret == "" {
+	if *fromFlag == "" || *toFlag == "" || *robotAddr == "" || *robotApiKey == ""  || *robotApiId == "" {
+		fmt.Printf("from: %s\n", *fromFlag)
+		fmt.Printf("to: %s\n", *toFlag)
+		fmt.Printf("robot: %s\n", *robotAddr)
+		fmt.Printf("api: %s\n", *robotApiKey)
+		fmt.Printf("id: %s\n", *robotApiId)
 		printErrorAndExit("flag required, use -help")
 	}
 
@@ -40,10 +46,13 @@ func main() {
 		context.Background(),
 		*robotAddr,
 		logging.NewLogger("client"),
-		client.WithDialOptions(rpc.WithCredentials(rpc.Credentials{
-			Type:    utils.CredentialsTypeRobotLocationSecret,
-			Payload: *robotSecret,
-		})),
+		client.WithDialOptions(rpc.WithEntityCredentials(
+			*robotApiId,
+			rpc.Credentials {
+				Type: rpc.CredentialsTypeAPIKey,
+				Payload: *robotApiKey,
+			},
+		)),
 	)
 	if err != nil {
 		printErrorAndExit(fmt.Sprintf("failed to connect to robot, %v", err))
@@ -72,7 +81,7 @@ func main() {
 	fmt.Printf("\tRuntime: %s", results["runtime"])
 	fmt.Printf("\tServices: %v\n", results["services"])
 	fmt.Printf("\tFiles:\n")
-	for _, lf := range results["filesCopied"].([]string) {
-		fmt.Printf("\t\t%s\n", lf)
+	for _, lf := range results["filesCopied"].([]interface{}) {
+		fmt.Printf("\t\t%v\n", lf)
 	}
 }

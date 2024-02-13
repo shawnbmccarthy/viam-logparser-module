@@ -106,7 +106,6 @@ func (lp *LogParser) Readings(_ context.Context, _ map[string]interface{}) (map[
 		"lastRun":  lp.lastMessage.lastRun.Local().Format(time.RFC3339),
 		"from":     lp.lastMessage.searchFrom.Local().Format(time.RFC3339),
 		"to":       lp.lastMessage.searchTo.Local().Format(time.RFC3339),
-		"logs":     lp.lastMessage.logs,
 		"services": lp.lastMessage.services,
 	}, nil
 }

@@ -9,7 +9,7 @@ type LogParserConfig struct {
 
 func (cfg *LogParserConfig) Validate(path string) ([]string, error) {
 	if len(cfg.LogFiles) == 0 {
-		return nil, fmt.Errorf(`"log_files" attribute requires at least one log for parser %q`, path)
+		return nil, fmt.Errorf(`"log_file_dirs" attribute requires at least one log for parser %q`, path)
 	}
 
 	if cfg.OutputDirectory == "" {
